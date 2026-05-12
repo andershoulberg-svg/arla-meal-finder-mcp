@@ -45,6 +45,14 @@ The project includes a `Dockerfile` and `render.yaml`, but this pilot should not
 - whether the endpoint can be public,
 - whether ChatGPT testing should use bearer auth, OAuth, or a short diagnostic no-auth window.
 
+The current `render.yaml` is set for an explicitly approved short-lived ChatGPT UI test with:
+
+```text
+ALLOW_UNAUTHENTICATED_HTTP=1
+```
+
+Remove that setting and use `MCP_AUTH_TOKEN` or OAuth before wider colleague testing.
+
 ## Safety Notes
 
 - Public Arla.dk content only.

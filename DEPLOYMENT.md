@@ -8,7 +8,20 @@ This MCP is ready for a hosted pilot, but publishing needs owner approval becaus
 2. Create a Render Web Service from the repo.
 3. Use Docker runtime with the included `Dockerfile`.
 4. Set Render health check path to `/health`.
-5. Configure environment variables:
+5. Configure environment variables.
+
+For short-lived ChatGPT UI testing without auth:
+
+```text
+MCP_TRANSPORT=http
+MCP_HOST=0.0.0.0
+ALLOW_UNAUTHENTICATED_HTTP=1
+MCP_RATE_LIMIT_PER_MINUTE=60
+ARLA_FETCH_TIMEOUT_MS=12000
+ARLA_CANDIDATE_FETCH_LIMIT=18
+```
+
+For protected API smoke testing:
 
 ```text
 MCP_TRANSPORT=http

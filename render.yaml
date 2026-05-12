@@ -15,5 +15,5 @@ services:
         value: "12000"
       - key: ARLA_CANDIDATE_FETCH_LIMIT
         value: "18"
-      - key: MCP_AUTH_TOKEN
-        sync: false
+      - key: ALLOW_UNAUTHENTICATED_HTTP
+        value: "1"
