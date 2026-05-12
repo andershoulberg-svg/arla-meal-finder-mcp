@@ -2,7 +2,7 @@ services:
   - type: web
     name: arla-meal-finder-mcp
     env: docker
-    plan: starter
+    plan: free
     healthCheckPath: /health
     envVars:
       - key: MCP_TRANSPORT
@@ -11,5 +11,9 @@ services:
         value: 0.0.0.0
       - key: MCP_RATE_LIMIT_PER_MINUTE
         value: "60"
+      - key: ARLA_FETCH_TIMEOUT_MS
+        value: "12000"
+      - key: ARLA_CANDIDATE_FETCH_LIMIT
+        value: "18"
       - key: MCP_AUTH_TOKEN
         sync: false
