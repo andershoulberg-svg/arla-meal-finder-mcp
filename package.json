@@ -1,0 +1,15 @@
+{
+  "name": "mcp-arla-meal-finder",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A small MCP pilot that recommends Arla.dk recipes from public structured recipe content.",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test",
+    "smoke:local": "node scripts/smoke-local.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
