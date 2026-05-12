@@ -62,13 +62,17 @@ try {
     "recipes should include Arla.dk source URLs"
   );
 
+  const sseCheck = await smokeSse();
+  assert(sseCheck.toolName === "recommend_arla_recipes", "SSE transport should list the recipe tool");
+
   console.log(
     JSON.stringify(
       {
         ok: true,
-        checks: ["health", "unauthorized", "initialize", "tools/list", "tools/call"],
+        checks: ["health", "unauthorized", "initialize", "tools/list", "tools/call", "sse"],
         sample_recipe: call.result.structuredContent.recipes[0].name,
-        sample_url: call.result.structuredContent.recipes[0].url
+        sample_url: call.result.structuredContent.recipes[0].url,
+        sse_tool: sseCheck.toolName
       },
       null,
       2
@@ -76,6 +80,61 @@ try {
   );
 } finally {
   child.kill();
+}
+
+async function smokeSse() {
+  const controller = new AbortController();
+  const sseResponse = await fetch(`${baseUrl}/mcp`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "text/event-stream"
+    },
+    signal: controller.signal
+  });
+  assert(sseResponse.ok, "SSE GET /mcp should open");
+
+  const reader = sseResponse.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let endpoint = "";
+
+  const started = Date.now();
+  while (Date.now() - started < 5000 && !endpoint) {
+    const { value } = await reader.read();
+    buffer += decoder.decode(value, { stream: true });
+    const match = buffer.match(/event:\s*endpoint\s*\ndata:\s*(.*?)\n\n/s);
+    if (match) endpoint = match[1].trim();
+  }
+
+  assert(endpoint, "SSE endpoint event should be emitted");
+
+  const messageResponse = await fetch(`${baseUrl}${endpoint}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 7, method: "tools/list", params: {} })
+  });
+  assert(messageResponse.status === 202, "SSE message POST should be accepted");
+
+  const messageStarted = Date.now();
+  while (Date.now() - messageStarted < 5000) {
+    const { value } = await reader.read();
+    buffer += decoder.decode(value, { stream: true });
+    const matches = [...buffer.matchAll(/event:\s*message\s*\ndata:\s*(.*?)\n\n/gs)];
+    for (const match of matches) {
+      const json = JSON.parse(match[1]);
+      const toolName = json.result?.tools?.[0]?.name;
+      if (toolName) {
+        controller.abort();
+        return { toolName };
+      }
+    }
+  }
+
+  controller.abort();
+  throw new Error("SSE message event was not received");
 }
 
 async function waitForHealth() {

@@ -1,10 +1,17 @@
 import http from "node:http";
+import crypto from "node:crypto";
 
 export function startHttpServer({ config, handleMcpRequest }) {
   const rateBuckets = new Map();
+  const sseSessions = new Map();
 
   const server = http.createServer(async (req, res) => {
     try {
+      if (req.method === "OPTIONS") {
+        sendOptions(res);
+        return;
+      }
+
       if (!passesRateLimit(req, config, rateBuckets)) {
         sendJson(res, 429, { error: "rate_limited" });
         return;
@@ -15,18 +22,61 @@ export function startHttpServer({ config, handleMcpRequest }) {
         return;
       }
 
+      if (req.method === "GET" && req.url === "/") {
+        sendJson(res, 200, {
+          ok: true,
+          name: "arla-meal-finder",
+          mcp: "/mcp",
+          tools: ["recommend_arla_recipes"]
+        });
+        return;
+      }
+
       if (req.method === "GET" && req.url === "/mcp") {
         if (!isAuthorized(req, config)) {
           sendJson(res, 401, { error: "unauthorized" });
           return;
         }
+        const sessionId = crypto.randomUUID();
         res.writeHead(200, {
           "Content-Type": "text/event-stream",
           "Cache-Control": "no-cache",
-          Connection: "keep-alive"
+          Connection: "keep-alive",
+          "Access-Control-Allow-Origin": "*"
         });
-        res.write(`event: endpoint\ndata: ${JSON.stringify({ endpoint: "/mcp" })}\n\n`);
-        res.write(`event: ready\ndata: ${JSON.stringify({ ok: true })}\n\n`);
+        sseSessions.set(sessionId, res);
+        res.write(`event: endpoint\ndata: /mcp/message?sessionId=${sessionId}\n\n`);
+        res.write(`: ready\n\n`);
+        const heartbeat = setInterval(() => {
+          if (!res.destroyed) res.write(`: ping\n\n`);
+        }, 25000);
+        req.on("close", () => {
+          clearInterval(heartbeat);
+          sseSessions.delete(sessionId);
+        });
+        return;
+      }
+
+      if (req.method === "POST" && req.url?.startsWith("/mcp/message")) {
+        if (!isAuthorized(req, config)) {
+          sendJson(res, 401, { error: "unauthorized" });
+          return;
+        }
+
+        const requestUrl = new URL(req.url, "http://localhost");
+        const sessionId = requestUrl.searchParams.get("sessionId");
+        const sseResponse = sessionId ? sseSessions.get(sessionId) : null;
+        if (!sseResponse || sseResponse.destroyed) {
+          sendJson(res, 404, { error: "sse_session_not_found" });
+          return;
+        }
+
+        const body = await readJsonBody(req);
+        const response = await handleBody(body, handleMcpRequest);
+        if (response !== null) {
+          sseResponse.write(`event: message\ndata: ${JSON.stringify(response)}\n\n`);
+        }
+        sendJson(res, 202, { ok: true });
         return;
       }
 
@@ -37,8 +87,12 @@ export function startHttpServer({ config, handleMcpRequest }) {
         }
 
         const body = await readJsonBody(req);
-        const response = await handleMcpRequest(body);
-        sendJson(res, response.error ? 400 : 200, response);
+        const response = await handleBody(body, handleMcpRequest);
+        if (response === null) {
+          sendJson(res, 202, { ok: true });
+        } else {
+          sendJson(res, hasJsonRpcError(response) ? 400 : 200, response);
+        }
         return;
       }
 
@@ -55,6 +109,23 @@ export function startHttpServer({ config, handleMcpRequest }) {
   });
 
   return server;
+}
+
+async function handleBody(body, handleMcpRequest) {
+  if (Array.isArray(body)) {
+    const responses = [];
+    for (const item of body) {
+      const response = await handleMcpRequest(item);
+      if (response !== null) responses.push(response);
+    }
+    return responses.length ? responses : null;
+  }
+  return handleMcpRequest(body);
+}
+
+function hasJsonRpcError(response) {
+  if (Array.isArray(response)) return response.some((item) => item?.error);
+  return Boolean(response?.error);
 }
 
 function isAuthorized(req, config) {
@@ -90,7 +161,20 @@ async function readJsonBody(req) {
 
 function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, {
-    "Content-Type": "application/json; charset=utf-8"
+    "Content-Type": "application/json; charset=utf-8",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "content-type, authorization, mcp-session-id",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
   });
   res.end(JSON.stringify(payload));
+}
+
+function sendOptions(res) {
+  res.writeHead(204, {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "content-type, authorization, mcp-session-id",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Max-Age": "86400"
+  });
+  res.end();
 }

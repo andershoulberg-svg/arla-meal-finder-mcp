@@ -6,6 +6,12 @@ export function getToolDefinition() {
     title: "Recommend Arla.dk recipes",
     description:
       "Use this tool when the user asks for Arla recipe ideas, Danish meal inspiration, pantry-to-recipe help, quick dinner ideas, family meal planning, or a shopping-list-style summary. Extract natural wording into query, time, servings, meal type, included ingredients, excluded ingredients, and soft dietary preferences. Do not use it for medical advice, live retailer availability, or checkout.",
+    securitySchemes: [{ type: "noauth" }],
+    _meta: {
+      securitySchemes: [{ type: "noauth" }],
+      "openai/toolInvocation/invoking": "Finding Arla recipes",
+      "openai/toolInvocation/invoked": "Found Arla recipes"
+    },
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -67,14 +73,21 @@ export function createMcpHandler({ recipeService }) {
       return jsonRpcError(null, -32600, "Invalid Request");
     }
 
-    const { id = null, method, params } = request;
+    const { id, method, params } = request;
+    const hasId = Object.prototype.hasOwnProperty.call(request, "id");
 
     try {
+      if (!hasId && typeof method === "string" && method.startsWith("notifications/")) {
+        return null;
+      }
+
       if (method === "initialize") {
-        return jsonRpcResult(id, {
-          protocolVersion: "2024-11-05",
+        return jsonRpcResult(id ?? null, {
+          protocolVersion: "2025-06-18",
           capabilities: {
-            tools: {}
+            tools: {
+              listChanged: false
+            }
           },
           serverInfo: {
             name: "arla-meal-finder",
@@ -86,11 +99,11 @@ export function createMcpHandler({ recipeService }) {
       }
 
       if (method === "ping") {
-        return jsonRpcResult(id, {});
+        return jsonRpcResult(id ?? null, {});
       }
 
       if (method === "tools/list") {
-        return jsonRpcResult(id, {
+        return jsonRpcResult(id ?? null, {
           tools: [getToolDefinition()]
         });
       }
@@ -100,11 +113,11 @@ export function createMcpHandler({ recipeService }) {
         const args = params?.arguments || {};
 
         if (name !== TOOL_NAME) {
-          return jsonRpcError(id, -32602, `Unknown tool: ${name}`);
+          return jsonRpcError(id ?? null, -32602, `Unknown tool: ${name}`);
         }
 
         const result = await recipeService.recommendRecipes(args);
-        return jsonRpcResult(id, {
+        return jsonRpcResult(id ?? null, {
           content: [
             {
               type: "text",
@@ -115,9 +128,9 @@ export function createMcpHandler({ recipeService }) {
         });
       }
 
-      return jsonRpcError(id, -32601, `Method not found: ${method}`);
+      return jsonRpcError(id ?? null, -32601, `Method not found: ${method}`);
     } catch (error) {
-      return jsonRpcError(id, -32000, error.message || "Internal error");
+      return jsonRpcError(id ?? null, -32000, error.message || "Internal error");
     }
   };
 }
